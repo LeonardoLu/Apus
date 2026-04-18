@@ -203,9 +203,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var vmManager: VMManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 早于 SwiftUI 中 `VMManager` 初始化时也要保证目录与日志句柄就绪
+        VMConstants.ensureDirectoriesExist()
+        AppLog.prepare()
+        let version =
+            (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?"
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+        AppLog.log("应用启动，版本 \(version) (\(build))，日志目录: \(VMConstants.logsDirectoryURL.path)")
         // 初始化通知系统并请求权限
         NotificationManager.setup()
         NotificationManager.requestPermission()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        AppLog.log("应用即将退出")
+        AppLog.flushAndClose()
     }
 
     /// 关闭窗口后不退出（保留在状态栏）

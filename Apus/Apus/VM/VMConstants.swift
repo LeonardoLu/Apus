@@ -9,19 +9,25 @@ enum VMConstants {
     /// 使用 bundle identifier 作为 app 目录名
     static let bundleID = Bundle.main.bundleIdentifier ?? "com.github.leonardolu.Apus"
 
-    /// ~/Library/Application Support/com.github.leonardolu.Apus/
+    /// ~/Library/Application Support/<bundleID>/
     static let appSupportURL: URL = {
         FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent(bundleID, isDirectory: true)
     }()
 
-    /// ~/Library/Application Support/com.github.leonardolu.Apus/VMs/
+    /// ~/Library/Application Support/<bundleID>/VMs/
     static let vmsDirectoryURL = appSupportURL.appendingPathComponent("VMs", isDirectory: true)
 
-    /// ~/Library/Application Support/com.github.leonardolu.Apus/Downloads/
+    /// ~/Library/Application Support/<bundleID>/Downloads/
     static let downloadsDirectoryURL = appSupportURL.appendingPathComponent(
         "Downloads", isDirectory: true)
+
+    /// ~/Library/Application Support/<bundleID>/Logs/
+    static let logsDirectoryURL = appSupportURL.appendingPathComponent("Logs", isDirectory: true)
+
+    /// 主日志文件（与 `AppLog` 共用）
+    static let logFileURL = logsDirectoryURL.appendingPathComponent("Apus.log", isDirectory: false)
 
     /// 共享的 IPSW 下载路径（向后兼容的默认路径）
     static let restoreImageURL = downloadsDirectoryURL.appendingPathComponent("RestoreImage.ipsw")
@@ -65,8 +71,10 @@ enum VMConstants {
     /// 确保 app 所需目录存在
     static func ensureDirectoriesExist() {
         let fm = FileManager.default
+        try? fm.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
         try? fm.createDirectory(at: vmsDirectoryURL, withIntermediateDirectories: true)
         try? fm.createDirectory(at: downloadsDirectoryURL, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: logsDirectoryURL, withIntermediateDirectories: true)
     }
 
     // MARK: - 下载目录管理
