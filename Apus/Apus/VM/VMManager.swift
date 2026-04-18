@@ -75,6 +75,7 @@ class VMManager {
         VMConstants.ensureDirectoriesExist()
         AppLog.prepare()
         instances = VMInstance.loadAll()
+        AppLog.log("VMManager 初始化完成，已加载 \(instances.count) 台虚拟机")
         // 恢复上次选中的虚拟机
         if let savedIDString = UserDefaults.standard.string(forKey: "lastSelectedVMID"),
            let savedID = UUID(uuidString: savedIDString),
@@ -101,6 +102,7 @@ class VMManager {
         try? instance.save()
         instances.append(instance)
         selectedID = instance.id
+        AppLog.log("[虚拟机] 已创建「\(name)」(\(instance.id))，\(cpuCount) 核 / \(memoryGiB) GB / 磁盘 \(diskSizeGiB) GB")
         return instance
     }
 
@@ -109,6 +111,7 @@ class VMManager {
             forceStopVM(instanceID: instance.id)
         }
         try? FileManager.default.removeItem(at: instance.directoryURL)
+        AppLog.log("[虚拟机] 已删除「\(instance.name)」(\(instance.id))")
         instances.removeAll { $0.id == instance.id }
         if selectedID == instance.id {
             selectedID = instances.first?.id
@@ -117,8 +120,10 @@ class VMManager {
 
     func renameInstance(_ instance: VMInstance, to newName: String) {
         guard let idx = instances.firstIndex(where: { $0.id == instance.id }) else { return }
+        let oldName = instances[idx].name
         instances[idx].name = newName
         try? instances[idx].save()
+        AppLog.log("[虚拟机] 重命名「\(oldName)」→「\(newName)」(\(instance.id))")
     }
 
     func updateNetworkMode(_ instance: VMInstance, mode: VMNetworkMode, bridgedInterfaceID: String? = nil) {
@@ -126,6 +131,8 @@ class VMManager {
         instances[idx].networkMode = mode
         instances[idx].bridgedInterfaceID = bridgedInterfaceID
         try? instances[idx].save()
+        AppLog.log(
+            "[网络]「\(instances[idx].name)」网络模式已更新为 \(mode.rawValue)\(bridgedInterfaceID.map { ", 接口 \($0)" } ?? "")")
     }
 
     /// 重置虚拟机：停止运行、删除安装数据，保留配置以便重新安装
@@ -147,6 +154,7 @@ class VMManager {
         for fileURL in filesToDelete {
             try? fm.removeItem(at: fileURL)
         }
+        AppLog.log("[虚拟机] 已重置「\(instance.name)」(\(instance.id))，保留配置待重新安装")
     }
 
     /// 删除所有虚拟机
@@ -172,11 +180,13 @@ class VMManager {
 
     private func performDeleteAll() {
         let fm = FileManager.default
+        let count = instances.count
         for instance in instances {
             try? fm.removeItem(at: instance.directoryURL)
         }
         instances.removeAll()
         selectedID = nil
+        AppLog.log("[虚拟机] 已清除全部虚拟机（共 \(count) 台）")
     }
 
     // MARK: - 编辑虚拟机配置
@@ -213,25 +223,35 @@ class VMManager {
     @discardableResult
     func resizeDisk(for instance: VMInstance, newSizeGiB: Int) -> String? {
         guard newSizeGiB > instance.diskSizeGiB else {
-            return "新磁盘大小必须大于当前大小 (\(instance.diskSizeGiB) GB)"
+            let msg = "新磁盘大小必须大于当前大小 (\(instance.diskSizeGiB) GB)"
+            AppLog.log("[磁盘] 扩容被拒绝（\(instance.name)）: \(msg)")
+            return msg
         }
         guard runtimes[instance.id] == nil else {
-            return "虚拟机正在运行中，请先停止虚拟机再扩容磁盘"
+            let msg = "虚拟机正在运行中，请先停止虚拟机再扩容磁盘"
+            AppLog.log("[磁盘] 扩容被拒绝（\(instance.name)）: \(msg)")
+            return msg
         }
         guard instance.isInstalled else {
-            return "虚拟机尚未安装，无法扩容磁盘"
+            let msg = "虚拟机尚未安装，无法扩容磁盘"
+            AppLog.log("[磁盘] 扩容被拒绝（\(instance.name)）: \(msg)")
+            return msg
         }
 
         let diskURL = instance.diskImageURL
         let fd = open(diskURL.path, O_RDWR)
         guard fd != -1 else {
-            return "无法打开磁盘镜像文件"
+            let msg = "无法打开磁盘镜像文件"
+            AppLog.log("[磁盘] 扩容失败（\(instance.name)）: \(msg) — \(diskURL.path)")
+            return msg
         }
         let result = ftruncate(fd, Int64(newSizeGiB) * 1024 * 1024 * 1024)
         close(fd)
 
         guard result == 0 else {
-            return "磁盘扩容失败: errno=\(errno)"
+            let msg = "磁盘扩容失败: errno=\(errno)"
+            AppLog.log("[磁盘] 扩容失败（\(instance.name)）: \(msg)")
+            return msg
         }
 
         // 更新实例配置
@@ -240,7 +260,7 @@ class VMManager {
             try? instances[idx].save()
         }
 
-        NSLog("[Apus Disk] 磁盘已扩容: \(instance.diskSizeGiB) GB → \(newSizeGiB) GB")
+        AppLog.log("[磁盘] 「\(instance.name)」磁盘已扩容: \(instance.diskSizeGiB) GB → \(newSizeGiB) GB")
         return nil
     }
 
@@ -285,10 +305,10 @@ class VMManager {
             instances.append(clone)
             selectedID = clone.id
 
-            NSLog("[Apus Clone] 已克隆虚拟机: \(instance.name) → \(clone.name)")
+            AppLog.log("[克隆] 已克隆「\(instance.name)」→「\(clone.name)」")
             return clone
         } catch {
-            NSLog("[Apus Clone] 克隆失败: \(error.localizedDescription)")
+            AppLog.log("[克隆] 克隆「\(instance.name)」失败: \(error.localizedDescription)")
             try? fm.removeItem(at: clone.directoryURL)
             return nil
         }
@@ -306,7 +326,7 @@ class VMManager {
         }
 
         try fm.copyItem(at: instance.directoryURL, to: exportDir)
-        NSLog("[Apus Export] 已导出虚拟机: \(instance.name) → \(exportDir.path)")
+        AppLog.log("[导出] 已导出「\(instance.name)」→ \(exportDir.path)")
     }
 
     // MARK: - VM 导入
@@ -316,7 +336,7 @@ class VMManager {
     func importInstance(from sourceDirectory: URL) -> VMInstance? {
         // 尝试加载源目录的配置
         guard let sourceInstance = VMInstance.load(from: sourceDirectory) else {
-            NSLog("[Apus Import] 无法从 \(sourceDirectory.path) 加载 VM 配置")
+            AppLog.log("[导入] 无法从 \(sourceDirectory.path) 加载虚拟机配置")
             return nil
         }
 
@@ -349,10 +369,10 @@ class VMManager {
             instances.append(imported)
             selectedID = imported.id
 
-            NSLog("[Apus Import] 已导入虚拟机: \(imported.name)")
+            AppLog.log("[导入] 已导入「\(imported.name)」(\(imported.id))")
             return imported
         } catch {
-            NSLog("[Apus Import] 导入失败: \(error.localizedDescription)")
+            AppLog.log("[导入] 导入失败: \(error.localizedDescription)")
             try? fm.removeItem(at: imported.directoryURL)
             return nil
         }

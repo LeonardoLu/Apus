@@ -142,11 +142,18 @@ extension VMInstance {
                 includingPropertiesForKeys: [.isDirectoryKey])
         else { return [] }
 
+        let configName = "config.json"
         return entries.compactMap { url -> VMInstance? in
             let isDir =
                 (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             guard isDir else { return nil }
-            return VMInstance.load(from: url)
+            let configURL = url.appendingPathComponent(configName)
+            guard fm.fileExists(atPath: configURL.path) else { return nil }
+            guard let instance = VMInstance.load(from: url) else {
+                AppLog.log("[配置] 无法解析虚拟机配置: \(configURL.path)")
+                return nil
+            }
+            return instance
         }
         .sorted { $0.createdAt < $1.createdAt }
     }

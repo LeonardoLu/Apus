@@ -18,10 +18,12 @@ class VMDelegateHandler: NSObject, VZVirtualMachineDelegate {
     }
 
     func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+        AppLog.log("[VZ 代理] didStopWithError id=\(instanceID): \(error.localizedDescription)")
         manager?.handleVMError(instanceID: instanceID, error: error)
     }
 
     func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+        AppLog.log("[VZ 代理] guestDidStop id=\(instanceID)")
         manager?.handleGuestStopped(instanceID: instanceID)
     }
 }

@@ -53,7 +53,12 @@ enum NotificationManager {
     static func requestPermission(completion: ((Bool) -> Void)? = nil) {
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
-        ) { granted, _ in
+        ) { granted, error in
+            if let error {
+                AppLog.log("[通知] 请求授权失败: \(error.localizedDescription)")
+            } else {
+                AppLog.log("[通知] 用户授权结果: \(granted ? "已允许" : "已拒绝")")
+            }
             DispatchQueue.main.async {
                 completion?(granted)
             }

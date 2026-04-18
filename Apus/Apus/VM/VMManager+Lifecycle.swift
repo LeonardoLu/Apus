@@ -12,15 +12,24 @@ extension VMManager {
 
 /// 启动指定虚拟机（多 VM 可同时运行）
 func startInstance(_ instance: VMInstance, recoveryMode: Bool = false) {
-    guard runtimes[instance.id] == nil else { return }
-    guard instance.isInstalled else { return }
+    guard runtimes[instance.id] == nil else {
+        AppLog.log("[启动]「\(instance.name)」已有活动运行时，忽略重复启动")
+        return
+    }
+    guard instance.isInstalled else {
+        AppLog.log("[启动]「\(instance.name)」尚未安装，无法启动")
+        return
+    }
 
     let runtime = getOrCreateRuntime(for: instance)
+    AppLog.log(
+        "[启动]「\(instance.name)」(\(instance.id))\(recoveryMode ? " [恢复模式]" : "")")
 
     do {
         try buildVirtualMachine(for: instance, runtime: runtime)
         startVM(for: instance, runtime: runtime, recoveryMode: recoveryMode)
     } catch {
+        AppLog.log("[启动]「\(instance.name)」构建失败: \(error.localizedDescription)")
         runtime.state = .error("创建虚拟机失败: \(error.localizedDescription)")
     }
 }
@@ -82,9 +91,9 @@ private func buildVirtualMachine(for instance: VMInstance, runtime: VMRuntime) t
             let usbDevice = try VMConfiguration.createUSBMassStorageDeviceConfiguration(
                 imageURL: URL(fileURLWithPath: usbPath))
             storageDevices.append(usbDevice)
-            NSLog("[Apus USB] 已挂载 USB 镜像: \(usbPath)")
+            AppLog.log("[USB] 已挂载镜像: \(usbPath)")
         } catch {
-            NSLog("[Apus USB] ⚠️ 无法挂载 USB 镜像: \(error.localizedDescription)")
+            AppLog.log("[USB] 无法挂载镜像: \(error.localizedDescription) — \(usbPath)")
         }
     }
     vmConfig.storageDevices = storageDevices
@@ -98,20 +107,22 @@ private func buildVirtualMachine(for instance: VMInstance, runtime: VMRuntime) t
         if FileManager.default.fileExists(atPath: sharedPath) {
             let shareDevice = VMConfiguration.createDirectoryShareDeviceConfiguration(sharedURL: sharedURL)
             vmConfig.directorySharingDevices = [shareDevice]
-            NSLog("[Apus VirtioFS] 已配置共享文件夹: \(sharedPath)")
+            AppLog.log("[VirtioFS] 已配置共享文件夹: \(sharedPath)")
         } else {
-            NSLog("[Apus VirtioFS] ⚠️ 共享文件夹路径不存在: \(sharedPath)")
+            AppLog.log("[VirtioFS] 共享文件夹路径不存在: \(sharedPath)")
         }
     }
 
-    NSLog("[Apus] 启动阶段 — VM 配置: CPU=\(vmConfig.cpuCount), 内存=\(vmConfig.memorySize / 1024 / 1024 / 1024)GB, 网络模式=\(instance.networkMode.rawValue), 网络设备数=\(vmConfig.networkDevices.count)")
+    AppLog.log(
+        "[启动/配置] CPU=\(vmConfig.cpuCount), 内存=\(vmConfig.memorySize / 1024 / 1024 / 1024)GB, 网络=\(instance.networkMode.rawValue), 网卡数=\(vmConfig.networkDevices.count)")
     for (i, netDev) in vmConfig.networkDevices.enumerated() {
         if let virtio = netDev as? VZVirtioNetworkDeviceConfiguration {
-            NSLog("[Apus Network] 启动阶段 — 网络设备[\(i)]: MAC=\(virtio.macAddress.string), 附件=\(type(of: virtio.attachment as Any))")
+            AppLog.log(
+                "[启动/网络] 设备[\(i)] MAC=\(virtio.macAddress.string), 附件=\(type(of: virtio.attachment as Any))")
         }
     }
     try vmConfig.validate()
-    NSLog("[Apus] 启动阶段 — VM 配置验证通过")
+    AppLog.log("[启动/配置] 校验通过")
     try vmConfig.validateSaveRestoreSupport()
 
     let vm = VZVirtualMachine(configuration: vmConfig)
@@ -134,8 +145,10 @@ private func startVM(for instance: VMInstance, runtime: VMRuntime, recoveryMode:
         options.startUpFromMacOSRecovery = true
         vm.start(options: options) { [weak runtime] error in
             if let error {
+                AppLog.log("[启动] Recovery 模式失败（\(instance.name)）: \(error.localizedDescription)")
                 runtime?.state = .error("Recovery 模式启动失败: \(error.localizedDescription)")
             } else {
+                AppLog.log("[启动]「\(instance.name)」已进入 Recovery 运行状态")
                 runtime?.state = .running
                 runtime?.startedAt = Date()
             }
@@ -143,8 +156,10 @@ private func startVM(for instance: VMInstance, runtime: VMRuntime, recoveryMode:
     } else {
         vm.start { [weak runtime] result in
             if case let .failure(error) = result {
+                AppLog.log("[启动]「\(instance.name)」冷启动失败: \(error.localizedDescription)")
                 runtime?.state = .error("启动失败: \(error.localizedDescription)")
             } else {
+                AppLog.log("[启动]「\(instance.name)」已运行")
                 runtime?.state = .running
                 runtime?.startedAt = Date()
             }
@@ -157,8 +172,12 @@ func pauseVM(instanceID: UUID) {
     runtime.state = .pausing
     vm.pause { [weak runtime] result in
         if case let .failure(error) = result {
+            let name = self.instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
+            AppLog.log("[暂停]「\(name)」失败: \(error.localizedDescription)")
             runtime?.state = .error("暂停失败: \(error.localizedDescription)")
         } else {
+            let name = self.instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
+            AppLog.log("[暂停]「\(name)」已暂停")
             runtime?.state = .paused
         }
     }
@@ -168,8 +187,12 @@ func resumeVM(instanceID: UUID) {
     guard let runtime = runtimes[instanceID], let vm = runtime.virtualMachine else { return }
     vm.resume { [weak runtime] result in
         if case let .failure(error) = result {
+            let name = self.instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
+            AppLog.log("[恢复]「\(name)」失败: \(error.localizedDescription)")
             runtime?.state = .error("恢复失败: \(error.localizedDescription)")
         } else {
+            let name = self.instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
+            AppLog.log("[恢复]「\(name)」已继续运行")
             runtime?.state = .running
         }
     }
@@ -183,10 +206,12 @@ func stopVM(instanceID: UUID) {
 /// 优雅关机（向虚拟机发送关机请求，虚拟机可能不响应）
 func shutdownVM(instanceID: UUID) {
     guard let runtime = runtimes[instanceID], let vm = runtime.virtualMachine else { return }
+    let name = instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
     do {
         try vm.requestStop()
+        AppLog.log("[关机] 已向「\(name)」发送优雅关机请求")
     } catch {
-        // requestStop 失败时回退到强制停止
+        AppLog.log("[关机]「\(name)」requestStop 失败，改为强制停止: \(error.localizedDescription)")
         forceStopVM(instanceID: instanceID)
     }
 }
@@ -194,13 +219,19 @@ func shutdownVM(instanceID: UUID) {
 func forceStopVM(instanceID: UUID, completion: (() -> Void)? = nil) {
     guard let runtime = runtimes[instanceID], let vm = runtime.virtualMachine, vm.canStop
     else {
+        let label =
+            instances.first { $0.id == instanceID }.map { "「\($0.name)」" } ?? "id=\(instanceID)"
+        AppLog.log("[停止] \(label) 未执行 VZ stop（无运行时或不可 stop），已清理状态")
         cleanupRuntime(for: instanceID)
         completion?()
         return
     }
+    let name = instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
     vm.stop { [weak self] error in
         if let error {
-            NSLog("强制停止虚拟机失败: \(error.localizedDescription)")
+            AppLog.log("[停止]「\(name)」stop 回调错误: \(error.localizedDescription)")
+        } else {
+            AppLog.log("[停止]「\(name)」已强制停止")
         }
         self?.cleanupRuntime(for: instanceID)
         completion?()
@@ -214,17 +245,24 @@ private func restoreVM(for instance: VMInstance, runtime: VMRuntime) {
         if error == nil {
             vm.resume { [weak runtime] result in
                 if case let .failure(error) = result {
+                    AppLog.log(
+                        "[休眠恢复]「\(instance.name)」从休眠镜像恢复后 resume 失败: \(error.localizedDescription)")
                     runtime?.state = .error("恢复失败: \(error.localizedDescription)")
                 } else {
+                    AppLog.log("[休眠恢复]「\(instance.name)」已从休眠恢复运行")
                     runtime?.state = .running
                     runtime?.startedAt = Date()
                 }
             }
         } else {
+            let reason = error.map { $0.localizedDescription } ?? "未知错误"
+            AppLog.log("[休眠恢复]「\(instance.name)」恢复休眠状态失败，尝试冷启动: \(reason)")
             vm.start { [weak runtime] result in
                 if case let .failure(error) = result {
+                    AppLog.log("[休眠恢复]「\(instance.name)」冷启动失败: \(error.localizedDescription)")
                     runtime?.state = .error("启动失败: \(error.localizedDescription)")
                 } else {
+                    AppLog.log("[休眠恢复]「\(instance.name)」冷启动成功")
                     runtime?.state = .running
                     runtime?.startedAt = Date()
                 }
@@ -240,6 +278,7 @@ func forceStopAllVMs(completion: @escaping () -> Void) {
     let ids = Array(runtimes.keys)
     guard !ids.isEmpty else { completion(); return }
 
+    AppLog.log("[停止] 批量强制停止 \(ids.count) 台活动虚拟机")
     let group = DispatchGroup()
     for id in ids {
         group.enter()
@@ -265,7 +304,9 @@ func saveAndPauseVM(instanceID: UUID, completion: @escaping () -> Void) {
         }
         vm.saveMachineStateTo(url: instance.saveFileURL) { error in
             if let error {
-                NSLog("保存 VM \(instance.name) 状态失败: \(error.localizedDescription)")
+                AppLog.log("[休眠] 保存「\(instance.name)」状态失败: \(error.localizedDescription)")
+            } else {
+                AppLog.log("[休眠]「\(instance.name)」状态已写入 \(instance.saveFileURL.lastPathComponent)")
             }
             completion()
         }
@@ -274,6 +315,8 @@ func saveAndPauseVM(instanceID: UUID, completion: @escaping () -> Void) {
 
 /// 清除错误状态
 func dismissError(instanceID: UUID) {
+    let name = instances.first { $0.id == instanceID }?.name ?? "\(instanceID)"
+    AppLog.log("[界面] 用户已关闭「\(name)」的错误状态")
     cleanupRuntime(for: instanceID)
 }
 
@@ -281,6 +324,7 @@ func dismissError(instanceID: UUID) {
 
 func handleVMError(instanceID: UUID, error: Error) {
     let name = instances.first { $0.id == instanceID }?.name ?? "虚拟机"
+    AppLog.log("[虚拟机错误]「\(name)」(\(instanceID)): \(error.localizedDescription)")
     runtimes[instanceID]?.state = .error("虚拟机异常停止: \(error.localizedDescription)")
     runtimes[instanceID]?.virtualMachine = nil
     runtimes[instanceID]?.delegate = nil
@@ -293,6 +337,7 @@ func handleVMError(instanceID: UUID, error: Error) {
 
 func handleGuestStopped(instanceID: UUID) {
     let name = instances.first { $0.id == instanceID }?.name ?? "虚拟机"
+    AppLog.log("[虚拟机]「\(name)」(\(instanceID)) 客户机已正常停止")
     cleanupRuntime(for: instanceID)
 
     NotificationManager.send(

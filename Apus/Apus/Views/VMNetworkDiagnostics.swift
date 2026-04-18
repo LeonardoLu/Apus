@@ -192,6 +192,7 @@ enum VMNetworkHelper {
             try process.run()
             process.waitUntilExit()
         } catch {
+            AppLog.log("[网络诊断] 执行 arp 失败: \(error.localizedDescription)")
             return nil
         }
 
@@ -224,6 +225,7 @@ enum VMNetworkHelper {
             try process.run()
             process.waitUntilExit()
         } catch {
+            AppLog.log("[网络诊断] 执行 ifconfig 失败: \(error.localizedDescription)")
             return nil
         }
 

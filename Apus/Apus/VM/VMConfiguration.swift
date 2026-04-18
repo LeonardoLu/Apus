@@ -68,16 +68,16 @@ enum VMConfiguration {
         switch networkMode {
         case .nat:
             config.attachment = VZNATNetworkDeviceAttachment()
-            NSLog("[Apus Network] 网络设备已配置 — MAC: \(resolvedMAC.string), 模式: NAT")
+            AppLog.log("[网络] 网络设备已配置 — MAC: \(resolvedMAC.string), 模式: NAT")
 
         case .bridged:
             if let attachment = Self.createBridgedAttachment(interfaceID: bridgedInterfaceID) {
                 config.attachment = attachment
-                NSLog("[Apus Network] 网络设备已配置 — MAC: \(resolvedMAC.string), 模式: 桥接, 接口: \(bridgedInterfaceID ?? "自动")")
+                AppLog.log("[网络] 网络设备已配置 — MAC: \(resolvedMAC.string), 模式: 桥接, 接口: \(bridgedInterfaceID ?? "自动")")
             } else {
                 // 找不到桥接接口时回退到 NAT
                 config.attachment = VZNATNetworkDeviceAttachment()
-                NSLog("[Apus Network] ⚠️ 未找到桥接接口，已回退至 NAT 模式 — MAC: \(resolvedMAC.string)")
+                AppLog.log("[网络] 未找到桥接接口，已回退至 NAT 模式 — MAC: \(resolvedMAC.string)")
             }
         }
 

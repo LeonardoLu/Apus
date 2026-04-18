@@ -231,6 +231,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
 
+        AppLog.log("退出应用：正在停止活动中的虚拟机…")
         vmManager.forceStopAllVMs {
             sender.reply(toApplicationShouldTerminate: true)
         }

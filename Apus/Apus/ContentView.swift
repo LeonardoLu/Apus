@@ -251,6 +251,8 @@ struct ContentView: View {
                     title: "虚拟机导入成功",
                     body: "已成功导入虚拟机",
                     category: .installComplete)
+            } else {
+                AppLog.log("[导入] 从 \(url.path) 导入未成功")
             }
         }
     }
@@ -272,7 +274,7 @@ struct ContentView: View {
                     body: "「\(instance.name)」已导出到 \(url.lastPathComponent)",
                     category: .installComplete)
             } catch {
-                NSLog("[Apus Export] 导出失败: \(error.localizedDescription)")
+                AppLog.log("[导出] 导出失败: \(error.localizedDescription)")
             }
         }
     }
